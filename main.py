@@ -1,10 +1,57 @@
 import re
 import time
+import os
+import psycopg2
 from edgar import get_filings, set_identity
 from datetime import datetime, timedelta
 from config import sec_items, name, email, forms
+from contextlib import closing
 
 set_identity(f"{name} {email}")
+DRY_RUN = True
+
+def conn_cur_decorator(func):
+    """
+    A method decorator to automatically close the database connection and cursor
+    after the method has finished executing.
+    """
+    def wrapper(*args, **kwargs):
+        dbname = os.environ.get("DBNAME")
+        user = os.environ.get("DBUSER")
+        password = os.environ.get("DBPASSWORD")
+        host = os.environ.get("DBHOST")
+        port = os.environ.get("DBPORT")
+
+        conn = psycopg2.connect(
+            host=host,
+            database=dbname,
+            user=user,
+            password=password,
+            port=port,
+        )
+        with closing(conn), closing(conn.cursor()) as cur:
+            result = func(cur, *args, **kwargs)
+            conn.commit()
+        return result
+    return wrapper
+
+@conn_cur_decorator
+def save_company(cur, company_name, date, filing, sections):
+
+    # check if a schema exists. if there is no schema, create one schema
+    schema_name = "sec_reports"
+    table_name = "eight_k"
+    cur.execute("SELECT schema_name FROM information_schema.schemata WHERE schema_name = %s", (schema_name,))
+    result = cur.fetchone()
+    if result:
+        print(f"The schema '{schema_name}' already exists.")
+    else:
+        cur.execute(f"CREATE SCHEMA {schema_name}")
+        print(f"The schema '{schema_name}' has been created.")
+
+    cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
+    for section_name in sections:
+        cur.execute(f"INSERT INTO {table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}');")
 
 
 def format_html(html):
@@ -44,6 +91,13 @@ if __name__ == "__main__":
             # normalise all cases with numbers in the beginning
 
             # Todo: this can surely be collapsed into fewer, smarter regular expressions.
+
+
+            # todo: treat case of when there is a period (1.2.1.Words. instead of 1.2.1.Words etc) at the end of the item in a more general way
+            text = text.replace(item[4:] + ".", item[4:])
+
+
+            # todo: create the validator, do not store if data is invalid (i.e. more occurrences of the text after all non-letter characters have been removed are found)
             # check for one whitespace
             pattern = r"(\d+\.\d+)([a-zA-Z])"
             replacement = r"\1 \2"
@@ -59,10 +113,11 @@ if __name__ == "__main__":
             replacement = r"\1. \2"
             text = text.replace(re.sub(pattern, replacement, item), item)
 
-            # followed by a dot
-            pattern = r"(\d+)\."
-            replacement = r"\1. "
-            text = text.replace(re.sub(pattern, replacement, item), item)
+            # followed by a dot. This is currently causing problems, fix in progress.
+            pattern = r"\d+\.\d+\.[a-zA-Z]+"
+            replacement = r"\1. \2"
+            # todo: modify below case to catch
+            # text = text.replace(re.sub(pattern, replacement, item), item)
 
         # normalise last case ("Signature"):
         signature_pattern = re.compile(r"(?i)signatures?")
@@ -92,6 +147,20 @@ if __name__ == "__main__":
             sec_items_data[current_item] = current_text.strip()
 
         company_time = time.time() - start_time
+
         print(f"Company: {df['company'][i]}")
         print(f"Duration: {company_time:.5f} seconds")
         print(f"Items found: {len(sec_items_data)}: {[item for item in sec_items_data]}")
+        if not DRY_RUN:
+            # company name, date, filing, section name, text
+            # todo: the code below is not very Pythonic, but easier to read imo. Modify when the requirements are fully cristalised and provide clarity through better comments
+            company_name = df["company"][i]
+            # convert dates to a format Postgres can digest
+            date = df["filing_date"][i].strftime('%Y-%m-%d %H:%M:%S.%f')
+            filing = df["form"][i]
+
+            # section_name is the key, text is the value
+            sections = sec_items_data
+            save_company(company_name=company_name, date=date, filing=filing, sections=sections)
+
+

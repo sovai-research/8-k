@@ -3,3 +3,4 @@ env/
 venv/
 8kfiling_scraper_env/
  __pycache__/
+.bash_profile
