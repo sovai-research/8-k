@@ -8,13 +8,15 @@ from config import sec_items, name, email, forms
 from contextlib import closing
 
 set_identity(f"{name} {email}")
-DRY_RUN = True
+DRY_RUN = False
+
 
 def conn_cur_decorator(func):
     """
     A method decorator to automatically close the database connection and cursor
     after the method has finished executing.
     """
+
     def wrapper(*args, **kwargs):
         dbname = os.environ.get("DBNAME")
         user = os.environ.get("DBUSER")
@@ -33,11 +35,12 @@ def conn_cur_decorator(func):
             result = func(cur, *args, **kwargs)
             conn.commit()
         return result
+
     return wrapper
+
 
 @conn_cur_decorator
 def save_company(cur, company_name, date, filing, sections):
-
     # check if a schema exists. if there is no schema, create one schema
     schema_name = "sec_reports"
     table_name = "eight_k"
@@ -49,9 +52,12 @@ def save_company(cur, company_name, date, filing, sections):
         cur.execute(f"CREATE SCHEMA {schema_name}")
         print(f"The schema '{schema_name}' has been created.")
 
-    cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
+    cur.execute(
+        f"CREATE TABLE IF NOT EXISTS {table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
+
     for section_name in sections:
-        cur.execute(f"INSERT INTO {table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}');")
+        cur.execute(
+            f"INSERT INTO {table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}');")
 
 
 def format_html(html):
@@ -78,7 +84,8 @@ if __name__ == "__main__":
     filings = get_filings(range(int(end_date), int(start_date)), form=forms)
 
     df = filings.to_pandas()
-    df["url"] = "https://www.sec.gov/Archives/edgar/data/" + df["cik"].astype(str) + "/" + df["accession_number"] + ".txt"
+    df["url"] = "https://www.sec.gov/Archives/edgar/data/" + df["cik"].astype(str) + "/" + df[
+        "accession_number"] + ".txt"
     df_8k = df[df["form"] == "8-K"]
 
     for i in range(len(filings)):
@@ -86,38 +93,175 @@ if __name__ == "__main__":
         url = df["url"][i]
 
         text = format_html(html=filings[i].html())
+        text = ' '.join(text.split())
+        # unique, weird to treat exceptions. all of them pertain to a certain entry
+        # 2.03
+        text = text.replace("Off-balance", "Off-Balance")
+        text = text.replace("0ff-balance", "Off-Balance")
+        text = text.replace("0ff-Balance", "Off-Balance")
 
-        for item in sec_items[:-1]:
+        for item in [i for i in sec_items][:-1]:
             # normalise all cases with numbers in the beginning
 
             # Todo: this can surely be collapsed into fewer, smarter regular expressions.
 
-
-            # todo: treat case of when there is a period (1.2.1.Words. instead of 1.2.1.Words etc) at the end of the item in a more general way
+            # todo: treat case of when there is a period (1.2.1.Words. instead of 1.2.1.Words etc) at the end of the
+            #  item in a more general way
             text = text.replace(item[4:] + ".", item[4:])
 
+            # todo: create the validator, do not store if data is invalid (i.e. more occurrences of the text after
+            #  all non-letter characters have been removed are found) check for one whitespace
+            pattern = sec_items[item]
+            # r"(\d+\.\d+)([a-zA-Z])"
+            # switch all this to translate
+            """
+            text = "This is a sample text with multiple occurrences of word1 and word2."
 
-            # todo: create the validator, do not store if data is invalid (i.e. more occurrences of the text after all non-letter characters have been removed are found)
-            # check for one whitespace
-            pattern = r"(\d+\.\d+)([a-zA-Z])"
+            # List of words to replace
+            words_to_replace = ["word1", "word2"]
+
+            # Replacement value
+            replacement = "replacement_word"
+
+            # Create translation table
+            translation_table = str.maketrans({word: replacement for word in words_to_replace})
+
+            # Perform replacements using translate
+            new_text = text.translate(translation_table)
+
+            print(new_text)
+            """
+
+            # treat for multiple whitespaces
             replacement = r"\1 \2"
             text = text.replace(re.sub(pattern, replacement, item), item)
-
-            # check for multiple whitespaces
-            pattern = r"(\d+\.\d+)\s+(.*)"
             replacement = r"\1 \2"
             text = text.replace(re.sub(pattern, replacement, item), item)
-
-            # followed by whitespace and dots
-            pattern = r"^(\d+\.\d+)(\D.*)$"
-            replacement = r"\1. \2"
+            replacement = r"\1  \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1   \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1    \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1    \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1     \2"
             text = text.replace(re.sub(pattern, replacement, item), item)
 
-            # followed by a dot. This is currently causing problems, fix in progress.
-            pattern = r"\d+\.\d+\.[a-zA-Z]+"
+            # treat for multiple whitespaces, followed by a dot
+            replacement = r"\1.\2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
             replacement = r"\1. \2"
-            # todo: modify below case to catch
-            # text = text.replace(re.sub(pattern, replacement, item), item)
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1.  \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1.   \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1.    \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1.    \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1.     \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            # Dash
+            replacement = r"\1-\2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1- \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1 - \2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            replacement = r"\1. -\2"
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            ##
+            ##
+            # Different capitalisation
+
+            # all lowercase:
+            replacement = lambda m: m.group(1) + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + " " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "   " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "." + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".  " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".   " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).lower()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            # all uppercase:
+            replacement = lambda m: m.group(1) + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + " " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "   " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "." + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".  " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".   " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).upper()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+            # first letter of each word capitalised
+            replacement = lambda m: m.group(1) + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + " " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "   " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "." + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".  " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + ".   " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            replacement = lambda m: m.group(1) + "  " + m.group(2).title()
+            text = text.replace(re.sub(pattern, replacement, item), item)
+
+            ## todo: "Literary" Capitalisaitons: avoid prepositions, conjunctions, etc.
+            # Depending to different popular styles.
+
+            # todo: A lot of the erroneus entries have random lack of spaces (what I think happens is that
+            #  they visually have a whitespace, but a different character in reality. test this hyp.)
+            # words = item.split()
+            # from itertools import combinations
+            # [' '.join(words[j] + words[j + 1].replace(' ', '') if j in subset else words[j] for j in
+            #           range(len(words) - 1)) + ' ' + words[-1] for r in range(len(words) - 1) for subset in
+            #  combinations(range(len(words) - 1), r)]
+
 
         # normalise last case ("Signature"):
         signature_pattern = re.compile(r"(?i)signatures?")
@@ -151,7 +295,27 @@ if __name__ == "__main__":
         print(f"Company: {df['company'][i]}")
         print(f"Duration: {company_time:.5f} seconds")
         print(f"Items found: {len(sec_items_data)}: {[item for item in sec_items_data]}")
-        if not DRY_RUN:
+        save = True
+        for j in sec_items:
+            if j.lower().replace(" ", "").replace(".", "").replace("-", "") in text.lower().replace(" ", "").replace(
+                    ".", "").replace("-", "") and j not in sec_items_data:
+                # file_path = 'test_file_8k.csv'
+                # Define the data to be written as a new line
+                # new_line = [df["company"][i], df["url"][i], df["cik"][i], df["filing_date"][i], j]
+
+                # Open the file in append mode
+                # import csv
+
+                # with open(file_path, 'a', newline='') as csv_file:
+                #    writer = csv.writer(csv_file)
+
+                #    # Write the new line to the file
+                #    writer.writerow(new_line)
+
+                # Close the file
+                # csv_file.close()
+                save = False
+        if not DRY_RUN and save:
             # company name, date, filing, section name, text
             # todo: the code below is not very Pythonic, but easier to read imo. Modify when the requirements are fully cristalised and provide clarity through better comments
             company_name = df["company"][i]
@@ -162,5 +326,3 @@ if __name__ == "__main__":
             # section_name is the key, text is the value
             sections = sec_items_data
             save_company(company_name=company_name, date=date, filing=filing, sections=sections)
-
-
