@@ -82,8 +82,16 @@ def save_company(cur, company_name, date, filing, sections):
     cur.execute(
         f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
     for section_name in sections:
-        cur.execute(
-            f"INSERT INTO {schema_name}.{table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}');")
+
+        # cur.execute(
+        #    f"""INSERT INTO {schema_name}.{table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}') ON CONFLICT (company_name, date, filing, section_name) DO NOTHING;""")
+        sql = f"""INSERT INTO {schema_name}.{table_name} (company_name, date, filing, section_name, section_text) 
+                  VALUES (%s, %s, %s, %s, %s)
+                  ON CONFLICT (company_name, date, filing, section_name) DO NOTHING;"""
+
+        params = (company_name, date, filing, section_name, sections[section_name])
+        cur.execute(sql, params)
+
 
 def format_html(html):
     # Define regular expression pattern to remove HTML tags, newlines and HTML character entities
