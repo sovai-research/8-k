@@ -80,9 +80,10 @@ def save_company(cur, company_name, date, filing, sections):
         print(f"The schema '{schema_name}' has been created.")
 
     cur.execute(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
-    return
-
+        f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} (id SERIAL, company_name VARCHAR(255), date DATE, filing VARCHAR(255), section_name VARCHAR(255), section_text TEXT,  PRIMARY KEY (company_name, date, filing, section_name) );")
+    for section_name in sections:
+        cur.execute(
+            f"INSERT INTO {table_name} (company_name, date, filing, section_name, section_text) VALUES ('{company_name}', '{date}', '{filing}', '{section_name}', '{sections[section_name]}');")
 
 def format_html(html):
     # Define regular expression pattern to remove HTML tags, newlines and HTML character entities
