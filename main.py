@@ -97,29 +97,41 @@ def get_yesterday_date():
     return yesterday.strftime("%Y%m%d")
 
 
-if __name__ == "__main__":
-    # todo: move this to an endpoint or a more appropriate trigger point
-    end_date = get_yesterday_date()
-    start_date = end_date  # Change this value to the desired start date (e.g., "20230101")
+def parse_date(date_str):
+    formats = [
+        "%Y-%m-%d %H:%M:%S.%f",  # with time and milliseconds
+        "%Y-%m-%d %H:%M:%S",  # with time
+        "%Y-%m-%d"  # without time
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            pass
+    raise ValueError(f"Date string {date_str} does not match any known formats")
 
+
+def store_filings_between_period(start_date: str, end_date: str):
+    # discuss format for start_date/end_date
+    start_date, end_date = parse_date(start_date), parse_date(end_date)
+    process_filings(start_date, end_date)
+
+    return {"Status": "200"}  # todo: convert to a proper response. add some data about what was saved.
+
+
+def process_filings(start_date, end_date):
+    import pdb
+    pdb.set_trace()
     filings = get_filings(range(int(end_date), int(start_date)), form=forms)
 
     df = filings.to_pandas()
     df["url"] = "https://www.sec.gov/Archives/edgar/data/" + df["cik"].astype(str) + "/" + df[
         "accession_number"] + ".txt"
-    df_8k = df[df["form"] == "8-K"]
     correct_counter = 0
     wrong_counter = 0
     for i in range(len(filings)):
-        start_time = time.time()
-        url = df["url"][i]
 
         text = format_html(html=filings[i].html())
-        for item in [i for i in sec_items][:-1]:
-
-            text = text.replace(item[4:] + ".", item[4:])
-
-            pattern = sec_items[item]
 
         text = replace_all_items(text)
 
@@ -151,8 +163,6 @@ if __name__ == "__main__":
         if current_item != "":
             sec_items_data[current_item] = current_text.strip()
 
-        company_time = time.time() - start_time
-
         correct = True
         for j in sec_items:
             if j.lower().replace(" ", "").replace(".", "").replace("-", "") in text.lower().replace(" ", "").replace(
@@ -177,8 +187,8 @@ if __name__ == "__main__":
             correct_counter += 1
         else:
             wrong_counter += 1
-        if (wrong_counter + correct_counter ) % 100 == 0:
-            print(f"Wrong: {wrong_counter}/{wrong_counter+correct_counter}")
+        if (wrong_counter + correct_counter) % 100 == 0:
+            print(f"Wrong: {wrong_counter}/{wrong_counter + correct_counter}")
         if not DRY_RUN:
             # company name, date, filing, section name, text
             # todo: the code below is not very Pythonic, but easier to read imo. Modify when the requirements are fully cristalised and provide clarity through better comments
@@ -192,3 +202,5 @@ if __name__ == "__main__":
             save_company(company_name=company_name, date=date, filing=filing, sections=sections)
 
 
+if __name__ == "__main__":
+    process_filings()
