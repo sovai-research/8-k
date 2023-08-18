@@ -1,7 +1,8 @@
 import re
-import time
+import csv
 import os
 import psycopg2
+from fastapi import FastAPI, HTTPException
 from edgar import get_filings, set_identity
 from datetime import datetime, timedelta
 from config import sec_items, name, email, forms
@@ -10,6 +11,7 @@ from replace_items import replace_all_items
 
 set_identity(f"{name} {email}")
 DRY_RUN = False
+app = FastAPI(debug=True)
 
 
 # Master function to replace all items in the given text
@@ -110,8 +112,8 @@ def parse_date(date_str):
             pass
     raise ValueError(f"Date string {date_str} does not match any known formats")
 
-
-def store_filings_between_period(start_date: str, end_date: str):
+@app.post('/filings_between_periods')
+def store_filings_between_periods(start_date: str, end_date: str):
     # discuss format for start_date/end_date
     start_date, end_date = parse_date(start_date), parse_date(end_date)
     process_filings(start_date, end_date)
@@ -120,9 +122,8 @@ def store_filings_between_period(start_date: str, end_date: str):
 
 
 def process_filings(start_date, end_date):
-    import pdb
-    pdb.set_trace()
-    filings = get_filings(range(int(end_date), int(start_date)), form=forms)
+    # date needs to be converted to timestamp. casting it to integer due to some weird interaction with decimals.
+    filings = get_filings(range(int(end_date.timestamp()), int(start_date.timestamp())), form=forms)
 
     df = filings.to_pandas()
     df["url"] = "https://www.sec.gov/Archives/edgar/data/" + df["cik"].astype(str) + "/" + df[
@@ -173,7 +174,6 @@ def process_filings(start_date, end_date):
                 # here to save
                 new_line = [df["cik"][i], j]
                 # Open the file in append mode
-                import csv
 
                 with open(file_path, 'a', newline='') as csv_file:
                     writer = csv.writer(csv_file)
@@ -203,4 +203,5 @@ def process_filings(start_date, end_date):
 
 
 if __name__ == "__main__":
-    process_filings()
+    process_filings(start_date=parse_date("2023-01-12"), end_date=parse_date("2023-01-14"))
+    # %Y-%m-%d
