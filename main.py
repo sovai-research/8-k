@@ -198,7 +198,7 @@ def process_filings(start_date, end_date):
             wrong_counter += 1
         if (wrong_counter + correct_counter) % 100 == 0:
             print(f"Wrong: {wrong_counter}/{wrong_counter + correct_counter}")
-        if not DRY_RUN:
+        if not DRY_RUN and correct:
             # company name, date, filing, section name, text
             # todo: the code below is not very Pythonic, but easier to read imo. Modify when the requirements are fully cristalised and provide clarity through better comments
             company_name = df["company"][i]
